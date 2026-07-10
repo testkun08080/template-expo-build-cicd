@@ -1,0 +1,67 @@
+name: iOS Fastlane Match Build
+
+on:
+  push:
+    tags:
+      - ios-v*
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: Fastlane lane to run
+        required: true
+        default: beta
+        type: choice
+        options:
+          - build
+          - beta
+
+jobs:
+  ios:
+    name: Fastlane iOS (${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'beta' }})
+    runs-on: macos-latest
+    env:
+      APP_IDENTIFIER: ${{ vars.APP_IDENTIFIER }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      MATCH_TYPE: ${{ vars.MATCH_TYPE || 'appstore' }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+      SCHEME_NAME: ${{ vars.SCHEME_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: fastlane
+
+      - name: Setup SSH for match
+        if: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY != '' }}
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+
+      - name: Configure match HTTPS auth
+        if: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION != '' }}
+        run: echo "MATCH_GIT_BASIC_AUTHORIZATION=${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}" >> "$GITHUB_ENV"
+
+      - name: Run fastlane
+        working-directory: fastlane
+        run: |
+          LANE="${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'beta' }}"
+          bundle exec fastlane ios "$LANE"
