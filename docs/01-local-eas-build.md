@@ -25,7 +25,7 @@ npx eas-cli build --profile production --platform android --local
 - `--local` 実行時、`eas.json` の `node` / `image` / `fastlane` / `cocoapods` / `ndk` などのバージョン指定は無視されます（手元にインストール済みのバージョンがそのまま使われます）。
 - ビルドキャッシュは効きません。
 - EAS の Secret 変数（Visibility: Secret）は参照できません。`.env.local` などローカルの環境変数を使ってください。
-- iOS の場合、事前に証明書・プロビジョニングプロファイルがローカルの Keychain / Xcode に設定されている必要があります。`fastlane match` を使っている場合は [docs/03](./03-github-actions-eas-fastlane.md) の match セクションを参照し、先に `bundle exec fastlane match appstore` などを実行してから local build してください。
+- iOS の場合、事前に証明書・プロビジョニングプロファイルがローカルの Keychain / Xcode に設定されている必要があります。`fastlane match` を使っている場合は [docs/04](./04-github-actions-eas-fastlane.md) の match セクションを参照し、先に `bundle exec fastlane match appstore` などを実行してから local build してください。
 - このテンプレートは Continuous Native Generation（CNG）方式のため `ios/` `android/` は `.gitignore` 対象です。`eas build --local` 実行時に自動生成されます。
 
 ## TestFlight へアップロード
@@ -35,7 +35,7 @@ npx eas-cli build --profile production --platform android --local
 ### 前提
 
 1. [App Store Connect](https://appstoreconnect.apple.com/) でアプリレコードを作成済みであること（Bundle ID は `app.json` の `ios.bundleIdentifier` と一致させる）
-2. Distribution 証明書と App Store 用プロビジョニングプロファイルが手元に設定済みであること（`eas credentials` または [docs/03](./03-github-actions-eas-fastlane.md) の `fastlane match appstore`）
+2. Distribution 証明書と App Store 用プロビジョニングプロファイルが手元に設定済みであること（`eas credentials` または [docs/04](./04-github-actions-eas-fastlane.md) の `fastlane match appstore`）
 3. `eas.json` の `submit.production.ios` に Apple ID / ASC App ID / Team ID を設定済みであること（[docs/secrets-and-env.md](./secrets-and-env.md) 参照）
 
 ### 手順

@@ -1,15 +1,15 @@
-# 3. GitHub Actions（EAS Cloud Build + Fastlane Match Build）
+# 4. GitHub Actions（EAS Cloud Build + Fastlane Match Build）
 
 GitHub Actions 上でビルド〜配信を自動化する方法です。2つの CI パスから選べます。
 
 | パス | 概要 | ワークフロー |
 |---|---|---|
-| **3-A. EAS Cloud Build on GHA** | GHA から EAS クラウドビルドをキック（ubuntu ランナー） | [`.github/workflows/eas-build.yml`](../.github/workflows/eas-build.yml) |
-| **3-B. Fastlane Match Build on GHA** | macOS ランナー上で prebuild → match → gym → TestFlight | [`.github/workflows/ios-fastlane-match-build.yml`](../.github/workflows/ios-fastlane-match-build.yml) |
+| **4-A. EAS Cloud Build on GHA** | GHA から EAS クラウドビルドをキック（ubuntu ランナー） | [`.github/workflows/eas-build.yml`](../.github/workflows/eas-build.yml) |
+| **4-B. Fastlane Match Build on GHA** | macOS ランナー上で prebuild → match → gym → TestFlight | [`.github/workflows/ios-fastlane-match-build.yml`](../.github/workflows/ios-fastlane-match-build.yml) |
 
 ## どちらを選ぶか
 
-| 観点 | 3-A EAS on GHA | 3-B Fastlane on GHA |
+| 観点 | 4-A EAS on GHA | 4-B Fastlane on GHA |
 |---|---|---|
 | ランナー | ubuntu（安価） | macos（高コスト） |
 | 証明書 | EAS 管理 | match 専用 Git リポ |
@@ -18,7 +18,7 @@ GitHub Actions 上でビルド〜配信を自動化する方法です。2つの 
 
 ---
 
-## 3-A. EAS Cloud Build on GHA
+## 4-A. EAS Cloud Build on GHA
 
 手元で `eas build` を叩く代わりに、push や手動実行で EAS Cloud Build をキックし、オプションで TestFlight 提出まで行います。
 
@@ -54,7 +54,7 @@ npx eas-cli submit --platform ios --latest --profile production --non-interactiv
 
 ---
 
-## 3-B. Fastlane Match Build on GHA
+## 4-B. Fastlane Match Build on GHA
 
 証明書・プロビジョニングプロファイルを、アプリ本体とは別の非公開 Git リポジトリで一元管理し（fastlane match の標準的な運用方法）、GitHub Actions の macOS ランナー上でネイティブビルド〜TestFlight 配信まで行う方法です。EAS を使わず、自前の CI で完結させたいチーム向けです。
 
@@ -100,7 +100,7 @@ CI（GitHub Actions）が証明書リポジトリを clone できるよう、以
 
 #### 4. アプリリポジトリに Secrets / Variables を設定する
 
-`docs/secrets-and-env.md` の **3. GitHub Actions → 3-B** 一覧を参照し、GitHub の Settings → Secrets and variables → Actions に登録してください。
+`docs/secrets-and-env.md` の **4. GitHub Actions → 4-B** 一覧を参照し、GitHub の Settings → Secrets and variables → Actions に登録してください。
 
 #### 5. ワークフローを実行する
 

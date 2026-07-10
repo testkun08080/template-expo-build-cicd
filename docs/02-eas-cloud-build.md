@@ -35,7 +35,7 @@ npx eas-cli build --profile production --platform all
 ## 証明書・署名の管理方法（2択）
 
 1. **EAS マネージド（デフォルト）**: `eas credentials` で EAS 側に証明書を生成・保管してもらう。個人開発や少人数チーム向け。
-2. **自前管理（fastlane match 等）**: [docs/03](./03-github-actions-eas-fastlane.md) の match リポジトリを運用している場合、EAS Build にも同じ証明書を使わせることができます（`eas credentials` → "I want to reuse an existing certificate" のフローで `.p12` / `.mobileprovision` をインポート）。
+2. **自前管理（fastlane match 等）**: [docs/04](./04-github-actions-eas-fastlane.md) の match リポジトリを運用している場合、EAS Build にも同じ証明書を使わせることができます（`eas credentials` → "I want to reuse an existing certificate" のフローで `.p12` / `.mobileprovision` をインポート）。
 
 ## TestFlight へアップロード
 
@@ -90,4 +90,4 @@ npx eas-cli submit --platform ios --latest --profile production --non-interactiv
 
 ## GitHub Actions から実行する場合
 
-CI 上で EAS Cloud Build をトリガーしたい場合は [docs/03](./03-github-actions-eas-fastlane.md) の **3-A. EAS Cloud Build on GHA** を参照してください。
+CI 上で EAS Cloud Build をトリガーしたい場合は [docs/04](./04-github-actions-eas-fastlane.md) の **4-A. EAS Cloud Build on GHA** を参照してください。
