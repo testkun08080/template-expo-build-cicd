@@ -13,23 +13,35 @@ on:
         type: choice
         options:
           - build
+          - upload
           - beta
+      artifact_run_id:
+        description: Previous workflow run ID (required for upload-only; find it in the Actions run URL)
+        required: false
+        type: string
+
+concurrency:
+  group: ios-fastlane-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  ios:
-    name: Fastlane iOS (${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'beta' }})
+  build:
+    name: Build .ipa
+    if: github.event_name == 'push' || inputs.lane == 'build' || inputs.lane == 'beta'
     runs-on: macos-latest
     env:
-      APP_IDENTIFIER: ${{ vars.APP_IDENTIFIER }}
+      APP_IDENTIFIER: ${{ vars.APP_IDENTIFIER || 'com.testkun08080.template-expo-build' }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_TYPE: ${{ vars.MATCH_TYPE || 'appstore' }}
+      MATCH_GIT_AUTH: ${{ vars.MATCH_GIT_AUTH || 'https' }}
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
-      SCHEME_NAME: ${{ vars.SCHEME_NAME }}
+      SCHEME_NAME: ${{ vars.SCHEME_NAME || 'templateexpobuild' }}
+      BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,22 +58,115 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.2"
+          ruby-version: "3.3"
           bundler-cache: true
           working-directory: fastlane
 
+      - name: Validate build configuration
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in MATCH_GIT_URL MATCH_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$MATCH_GIT_AUTH" = "ssh" ] && [ -z "${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}" ]; then
+            echo "::error::MATCH_GIT_AUTH=ssh but MATCH_GIT_SSH_PRIVATE_KEY is not set"
+            missing=1
+          fi
+          if [ "$MATCH_GIT_AUTH" = "https" ] && [ -z "${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}" ]; then
+            echo "::error::MATCH_GIT_AUTH=https but MATCH_GIT_BASIC_AUTHORIZATION is not set"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Setup SSH for match
-        if: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY != '' }}
+        if: env.MATCH_GIT_AUTH == 'ssh'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
 
       - name: Configure match HTTPS auth
-        if: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION != '' }}
+        if: env.MATCH_GIT_AUTH == 'https'
         run: echo "MATCH_GIT_BASIC_AUTHORIZATION=${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}" >> "$GITHUB_ENV"
 
-      - name: Run fastlane
+      - name: Run fastlane build
         working-directory: fastlane
+        run: bundle exec fastlane ios build
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/${{ env.SCHEME_NAME }}.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+  upload:
+    name: Upload to TestFlight
+    needs: [build]
+    if: |
+      always() &&
+      !cancelled() &&
+      (github.event_name == 'push' || inputs.lane == 'upload' || inputs.lane == 'beta') &&
+      (needs.build.result == 'success' || inputs.lane == 'upload')
+    runs-on: macos-latest
+    env:
+      APP_IDENTIFIER: ${{ vars.APP_IDENTIFIER || 'com.testkun08080.template-expo-build' }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+      SCHEME_NAME: ${{ vars.SCHEME_NAME || 'templateexpobuild' }}
+      IPA_PATH: ${{ github.workspace }}/build/${{ vars.SCHEME_NAME || 'templateexpobuild' }}.ipa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: fastlane
+
+      - name: Validate upload configuration
         run: |
-          LANE="${{ github.event_name == 'workflow_dispatch' && inputs.lane || 'beta' }}"
-          bundle exec fastlane ios "$LANE"
+          set -euo pipefail
+          if [ "${{ inputs.lane }}" = "upload" ] && [ -z "${{ inputs.artifact_run_id }}" ] && [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::upload-only requires artifact_run_id from a previous build workflow run"
+            exit 1
+          fi
+          missing=0
+          for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_KEY_ISSUER_ID APP_STORE_CONNECT_API_KEY_P8; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Download IPA from this workflow
+        if: needs.build.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-ipa
+          path: build
+
+      - name: Download IPA from previous workflow run
+        if: inputs.lane == 'upload' && inputs.artifact_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-ipa
+          path: build
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.artifact_run_id }}
+
+      - name: Run fastlane upload
+        working-directory: fastlane
+        run: bundle exec fastlane ios upload

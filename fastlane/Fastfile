@@ -14,24 +14,122 @@ def ios_workspace_path
   File.join(project_root, "ios", "#{ios_scheme_name}.xcworkspace")
 end
 
-def fetch_app_store_connect_api_key
-  key_content = ENV["APP_STORE_CONNECT_API_KEY_P8"]
-  if key_content.nil? || key_content.empty?
-    UI.user_error!("APP_STORE_CONNECT_API_KEY_P8 is required for TestFlight upload")
-  end
+def ios_xcodeproj_path
+  File.join(project_root, "ios", "#{ios_scheme_name}.xcodeproj")
+end
 
-  decoded_key = begin
-    Base64.decode64(key_content)
-  rescue StandardError
-    key_content
-  end
+def ios_app_identifier
+  ENV["APP_IDENTIFIER"] || "com.testkun08080.template-expo-build"
+end
 
-  app_store_connect_api_key(
-    key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"],
-    issuer_id: ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"],
-    key_content: decoded_key,
-    is_key_content_base64: false
+def match_provisioning_profile_name
+  profile_type = {
+    "development" => "Development",
+    "appstore" => "AppStore",
+    "adhoc" => "AdHoc",
+    "enterprise" => "InHouse"
+  }.fetch(ENV["MATCH_TYPE"] || "appstore", "AppStore")
+
+  "match #{profile_type} #{ios_app_identifier}"
+end
+
+def configure_ios_code_signing!
+  # expo prebuild regenerates ios/ with automatic signing; apply match profiles before gym.
+  update_code_signing_settings(
+    use_automatic_signing: false,
+    path: ios_xcodeproj_path,
+    team_id: ENV["APPLE_TEAM_ID"],
+    targets: [ios_scheme_name],
+    build_configurations: ["Release"],
+    code_sign_identity: "Apple Distribution",
+    profile_name: match_provisioning_profile_name
   )
+end
+
+def api_key_configured?
+  key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"]
+  issuer_id = ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"] || ENV["APP_STORE_CONNECT_API_ISSUER_ID"]
+  p8 = ENV["APP_STORE_CONNECT_API_KEY_P8"]
+  path = ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+  !key_id.to_s.empty? && !issuer_id.to_s.empty? && (!p8.to_s.empty? || !path.to_s.empty?)
+end
+
+def bump_ios_build_number!
+  return unless File.exist?(ios_xcodeproj_path)
+
+  build_number = ENV["BUILD_NUMBER"]
+  if build_number.nil? || build_number.empty?
+    if api_key_configured?
+      latest = latest_testflight_build_number(
+        api_key: fetch_app_store_connect_api_key,
+        app_identifier: ios_app_identifier
+      )
+      build_number = (latest + 1).to_s
+      UI.message("Auto-incremented build number from TestFlight: #{build_number}")
+    else
+      UI.important("BUILD_NUMBER not set and App Store Connect API key unavailable; using build number from app.json")
+      return
+    end
+  end
+
+  increment_build_number(
+    xcodeproj: ios_xcodeproj_path,
+    build_number: build_number
+  )
+end
+
+def ios_ipa_path
+  ENV["IPA_PATH"] || Actions.lane_context[SharedValues::IPA_OUTPUT_PATH] || File.join(project_root, "build", "#{ios_scheme_name}.ipa")
+end
+
+def upload_ipa_to_testflight!
+  ipa_path = ios_ipa_path
+  UI.user_error!("IPA not found: #{ipa_path}") unless File.exist?(ipa_path)
+
+  upload_to_testflight(
+    ipa: ipa_path,
+    api_key: fetch_app_store_connect_api_key,
+    skip_waiting_for_build_processing: true
+  )
+end
+
+def fetch_app_store_connect_api_key
+  key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"]
+  issuer_id = ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"] || ENV["APP_STORE_CONNECT_API_ISSUER_ID"]
+
+  if key_id.nil? || key_id.empty? || issuer_id.nil? || issuer_id.empty?
+    UI.user_error!("APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_API_KEY_ISSUER_ID are required for TestFlight upload")
+  end
+
+  key_content = ENV["APP_STORE_CONNECT_API_KEY_P8"]
+  unless key_content.nil? || key_content.empty?
+    decoded_key = begin
+      Base64.decode64(key_content)
+    rescue StandardError
+      key_content
+    end
+
+    return app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      key_content: decoded_key,
+      is_key_content_base64: false
+    )
+  end
+
+  key_path = ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+  unless key_path.nil? || key_path.empty?
+    resolved_path = key_path.start_with?("/") ? key_path : File.expand_path(key_path, __dir__)
+    UI.user_error!("APP_STORE_CONNECT_API_KEY_PATH not found: #{resolved_path}") unless File.exist?(resolved_path)
+
+    return app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      key_filepath: resolved_path
+    )
+  end
+
+  UI.user_error!("APP_STORE_CONNECT_API_KEY_P8 (CI) or APP_STORE_CONNECT_API_KEY_PATH (local) is required for TestFlight upload")
 end
 
 platform :ios do
@@ -56,34 +154,48 @@ platform :ios do
     Dir.chdir(project_root) do
       sh("npx expo prebuild --platform ios --no-install")
       Dir.chdir("ios") do
-        sh("pod install")
+        # bundle exec fastlane sets BUNDLE_GEMFILE; pod must not inherit it.
+        Bundler.with_unbundled_env do
+          sh("pod install")
+        end
       end
     end
+
+    bump_ios_build_number!
 
     match(
       type: ENV["MATCH_TYPE"] || "appstore",
       readonly: true
     )
 
+    configure_ios_code_signing!
+
     gym(
       workspace: ios_workspace_path,
       scheme: ios_scheme_name,
       configuration: "Release",
       export_method: "app-store",
+      export_options: {
+        method: "app-store",
+        provisioningProfiles: {
+          ios_app_identifier => match_provisioning_profile_name
+        }
+      },
       output_directory: File.join(project_root, "build"),
       output_name: "#{ios_scheme_name}.ipa",
       clean: true
     )
   end
 
+  desc "Upload an existing .ipa to TestFlight"
+  lane :upload do
+    upload_ipa_to_testflight!
+  end
+
   desc "Build and upload to TestFlight"
   lane :beta do
     build
-
-    upload_to_testflight(
-      api_key: fetch_app_store_connect_api_key,
-      skip_waiting_for_build_processing: true
-    )
+    upload_ipa_to_testflight!
   end
 end
 

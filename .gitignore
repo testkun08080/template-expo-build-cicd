@@ -32,6 +32,11 @@ yarn-error.*
 
 # local env files
 .env*.local
+fastlane/.env
+
+# Ruby / Bundler (fastlane)
+fastlane/vendor/bundle/
+fastlane/.bundle/
 
 # typescript
 *.tsbuildinfo
@@ -44,3 +49,4 @@ app-example
 !/ios/ci_scripts/**
 /android
 
+/build
