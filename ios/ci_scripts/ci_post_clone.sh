@@ -10,10 +10,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 npm ci
-
-if [ "${XCODE_CLOUD_SKIP_PREBUILD:-}" != "true" ]; then
-  npx expo prebuild --platform ios
-fi
+npx expo prebuild --platform ios
 
 cd ios
 pod install
