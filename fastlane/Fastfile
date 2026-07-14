@@ -135,6 +135,7 @@ end
 platform :ios do
   desc "Sync certificates from match (readonly)"
   lane :certificates do
+    setup_ci if ENV["CI"]
     match(
       type: ENV["MATCH_TYPE"] || "appstore",
       readonly: true
@@ -143,6 +144,7 @@ platform :ios do
 
   desc "Create or renew certificates in match (admin only)"
   lane :certificates_renew do
+    setup_ci if ENV["CI"]
     match(
       type: ENV["MATCH_TYPE"] || "appstore",
       readonly: false
@@ -162,6 +164,9 @@ platform :ios do
     end
 
     bump_ios_build_number!
+
+    # Temporary keychain for non-interactive codesigning on CI (avoids UI ACL prompts).
+    setup_ci if ENV["CI"]
 
     match(
       type: ENV["MATCH_TYPE"] || "appstore",

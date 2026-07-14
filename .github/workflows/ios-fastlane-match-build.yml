@@ -29,6 +29,7 @@ jobs:
     name: Build .ipa
     if: github.event_name == 'push' || inputs.lane == 'build' || inputs.lane == 'beta'
     runs-on: macos-latest
+    timeout-minutes: 90
     env:
       APP_IDENTIFIER: ${{ vars.APP_IDENTIFIER || 'com.testkun08080.template-expo-build' }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -36,7 +37,6 @@ jobs:
       MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_TYPE: ${{ vars.MATCH_TYPE || 'appstore' }}
-      MATCH_GIT_AUTH: ${{ vars.MATCH_GIT_AUTH || 'https' }}
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
@@ -66,32 +66,19 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in MATCH_GIT_URL MATCH_PASSWORD APPLE_TEAM_ID; do
+          for name in MATCH_GIT_URL MATCH_PASSWORD MATCH_GIT_BASIC_AUTHORIZATION APPLE_TEAM_ID; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing secret: $name"
               missing=1
             fi
           done
-          if [ "$MATCH_GIT_AUTH" = "ssh" ] && [ -z "${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}" ]; then
-            echo "::error::MATCH_GIT_AUTH=ssh but MATCH_GIT_SSH_PRIVATE_KEY is not set"
-            missing=1
-          fi
-          if [ "$MATCH_GIT_AUTH" = "https" ] && [ -z "${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}" ]; then
-            echo "::error::MATCH_GIT_AUTH=https but MATCH_GIT_BASIC_AUTHORIZATION is not set"
-            missing=1
-          fi
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-
-      - name: Setup SSH for match
-        if: env.MATCH_GIT_AUTH == 'ssh'
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+        env:
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
 
       - name: Configure match HTTPS auth
-        if: env.MATCH_GIT_AUTH == 'https'
         run: echo "MATCH_GIT_BASIC_AUTHORIZATION=${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}" >> "$GITHUB_ENV"
 
       - name: Run fastlane build
@@ -115,6 +102,7 @@ jobs:
       (github.event_name == 'push' || inputs.lane == 'upload' || inputs.lane == 'beta') &&
       (needs.build.result == 'success' || inputs.lane == 'upload')
     runs-on: macos-latest
+    timeout-minutes: 30
     env:
       APP_IDENTIFIER: ${{ vars.APP_IDENTIFIER || 'com.testkun08080.template-expo-build' }}
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
